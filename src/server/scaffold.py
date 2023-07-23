@@ -57,12 +57,13 @@ class SCAFFOLDServer(ServerBase):
                     model_params=client_local_params,
                     c_global=self.c_global,
                     verbose=(E % self.args.verbose_gap) == 0,
+                    round_number=E
                 )
                 res_cache.append(res)
 
                 self.num_correct[E].append(stats["correct"])
                 self.num_samples[E].append(stats["size"])
-            self.aggregate(res_cache)
+            self.aggregate(res_cache, E)
 
             if E % self.args.save_period == 0 and self.args.save_period > 0:
                 torch.save(
@@ -72,7 +73,7 @@ class SCAFFOLDServer(ServerBase):
                 with open(self.temp_dir / "epoch.pkl", "wb") as f:
                     pickle.dump(E, f)
 
-    def aggregate(self, res_cache):
+    def aggregate(self, res_cache, E: int):
         y_delta_cache = list(zip(*res_cache))[0]
         c_delta_cache = list(zip(*res_cache))[1]
         trainable_parameter = filter(
@@ -97,6 +98,8 @@ class SCAFFOLDServer(ServerBase):
             c_g.data += (
                 self.args.client_num_per_round / len(self.client_id_indices)
             ) * c_del
+
+        torch.save(self.c_global, f"data/control_variates/control_variates_global_r{E}.pt")
 
 
 if __name__ == "__main__":

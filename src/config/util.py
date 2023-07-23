@@ -55,7 +55,7 @@ def get_args() -> Namespace:
         default="mnist",
     )
     parser.add_argument("--batch_size", type=int, default=-1)
-    parser.add_argument("--gpu", type=int, default=1)
+    parser.add_argument("--gpu", type=int, default=6)
     parser.add_argument("--log", type=int, default=0)
     parser.add_argument("--seed", type=int, default=17)
     parser.add_argument("--client_num_per_round", type=int, default=2)

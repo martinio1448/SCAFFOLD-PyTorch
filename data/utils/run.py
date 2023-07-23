@@ -2,6 +2,7 @@ import time
 from path import Path
 
 _CURRENT_DIR = Path(__file__).parent.abspath()
+CUDA_VISIBLE_DEVICES=[6]
 import sys
 
 sys.path.append(_CURRENT_DIR)
@@ -37,6 +38,8 @@ def main(args):
         if args.root is not None
         else _CURRENT_DIR.parent / args.dataset
     )
+    print(_DATASET_ROOT)
+
     _PICKLES_DIR = _CURRENT_DIR.parent / args.dataset / "pickles"
 
     np.random.seed(args.seed)
@@ -152,6 +155,7 @@ def main(args):
             json.dump({"train": train_clients_stats, "test": test_clients_stats}, f)
 
     else:  # NOTE: "sample"  save stats
+        print("")
         client_id_indices = [i for i in range(client_num_in_total)]
         with open(_PICKLES_DIR / "seperation.pkl", "wb") as f:
             pickle.dump(

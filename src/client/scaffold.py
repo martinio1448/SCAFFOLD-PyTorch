@@ -2,7 +2,10 @@ from collections import OrderedDict
 from copy import deepcopy
 from typing import Dict, List, OrderedDict
 
+CUDA_VISIBLE_DEVICES=[6]
+
 import torch
+import os
 from rich.console import Console
 
 from .base import ClientBase
@@ -28,14 +31,15 @@ class SCAFFOLDClient(ClientBase):
             logger,
             gpu,
         )
-        self.c_local: Dict[List[torch.Tensor]] = {}
-        self.c_diff = []
+        self.c_local: Dict[int, List[torch.Tensor]] = {}
+        self.c_diff: List[torch.Tensor] = []
 
     def train(
         self,
         client_id: int,
         model_params: OrderedDict[str, torch.Tensor],
-        c_global,
+        c_global: List[torch.Tensor],
+        round_number: int,
         evaluate=True,
         verbose=True,
         use_valset=True,
@@ -47,6 +51,8 @@ class SCAFFOLDClient(ClientBase):
             self.c_diff = c_global
         else:
             self.c_diff = []
+            # c_l: List[torch.Tensor]
+            # c_g: List[torch.Tensor]
             for c_l, c_g in zip(self.c_local[self.client_id], c_global):
                 self.c_diff.append(-c_l + c_g)
         _, stats = self._log_while_training(evaluate, verbose, use_valset)()
@@ -74,6 +80,13 @@ class SCAFFOLDClient(ClientBase):
             coef = 1 / (self.local_epochs * self.local_lr)
             for c_l, c_g, diff in zip(self.c_local[self.client_id], c_global, y_delta):
                 c_plus.append(c_l - c_g - coef * diff)
+
+            path="./data/control_variates"
+            if not(os.path.exists(path)):
+                os.makedirs(path)
+
+            
+            torch.save(c_plus, f"{path}/control_variates_c{client_id}_r{round_number}.pt")
 
             # compute c_delta
             for c_p, c_l in zip(c_plus, self.c_local[self.client_id]):

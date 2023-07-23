@@ -28,9 +28,11 @@ class ClientBase:
         logger: Console,
         gpu: int,
     ):
+        print(f"Initializing client on gpu {gpu}")
         self.device = torch.device(
-            "cuda" if gpu and torch.cuda.is_available() else "cpu"
+            f"cuda:{gpu}" if gpu and torch.cuda.is_available() else "cpu"
         )
+        print(f"The following device is selected: {self.device}")
         self.client_id: int = None
         self.valset: Subset = None
         self.trainset: Subset = None
@@ -45,20 +47,20 @@ class ClientBase:
         self.local_lr = local_lr
         self.criterion = torch.nn.CrossEntropyLoss()
         self.logger = logger
-        self.untrainable_params: Dict[str, Dict[str, torch.Tensor]] = {}
+        self.untrainable_params: Dict[int, Dict[str, torch.Tensor]] = {}
 
     @torch.no_grad()
     def evaluate(self, use_valset=True):
         self.model.eval()
         criterion = torch.nn.CrossEntropyLoss(reduction="sum")
-        loss = 0
-        correct = 0
+        loss= 0#torch.Tensor = torch.Tensor(0).to(self.device)
+        correct = 0#torch.Tensor(0).to(self.device)
         dataloader = DataLoader(self.valset if use_valset else self.testset, 32)
         for x, y in dataloader:
             x, y = x.to(self.device), y.to(self.device)
-            logits = self.model(x)
+            logits = self.model(x).to(self.device)
             loss += criterion(logits, y)
-            pred = torch.softmax(logits, -1).argmax(-1)
+            pred = torch.softmax(logits, -1).argmax(-1)#.to(self.device)
             correct += (pred == y).int().sum()
         return loss.item(), correct.item()
 
@@ -69,7 +71,7 @@ class ClientBase:
         evaluate=True,
         verbose=False,
         use_valset=True,
-    ) -> Tuple[List[torch.Tensor], int]:
+    ) -> Tuple[Tuple[List[torch.Tensor], int], dict[str, int|float]]:
         self.client_id = client_id
         self.set_parameters(model_params)
         self.get_client_local_dataset()

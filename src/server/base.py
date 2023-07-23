@@ -44,7 +44,7 @@ class ServerBase:
             self.args.local_epochs,
         )
         self.device = torch.device(
-            "cuda" if self.args.gpu and torch.cuda.is_available() else "cpu"
+            f"cuda:{self.args.gpu}" if self.args.gpu and torch.cuda.is_available() else "cpu"
         )
         fix_random_seed(self.args.seed)
         self.backbone = LeNet5
