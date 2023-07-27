@@ -73,6 +73,8 @@ class SCAFFOLDServer(ServerBase):
                 with open(self.temp_dir / "epoch.pkl", "wb") as f:
                     pickle.dump(E, f)
 
+            torch.cuda.empty_cache()
+
     def aggregate(self, res_cache, E: int):
         y_delta_cache = list(zip(*res_cache))[0]
         c_delta_cache = list(zip(*res_cache))[1]

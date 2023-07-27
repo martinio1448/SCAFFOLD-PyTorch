@@ -2,7 +2,6 @@ import time
 from path import Path
 
 _CURRENT_DIR = Path(__file__).parent.abspath()
-CUDA_VISIBLE_DEVICES=[6]
 import sys
 
 sys.path.append(_CURRENT_DIR)

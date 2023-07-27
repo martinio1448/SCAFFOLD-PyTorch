@@ -2,8 +2,6 @@ from collections import OrderedDict
 from copy import deepcopy
 from typing import Dict, List, OrderedDict
 
-CUDA_VISIBLE_DEVICES=[6]
-
 import torch
 import os
 from rich.console import Console
@@ -45,6 +43,7 @@ class SCAFFOLDClient(ClientBase):
         use_valset=True,
     ):
         self.client_id = client_id
+        print(f"Train triggered for client {client_id} in round {round_number}")
         self.set_parameters(model_params)
         self.get_client_local_dataset()
         if self.client_id not in self.c_local.keys():

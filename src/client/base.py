@@ -29,8 +29,11 @@ class ClientBase:
         gpu: int,
     ):
         print(f"Initializing client on gpu {gpu}")
+        print(f"CUDA is available: {torch.cuda.is_available()}")
+        print(f"GPU: {not not torch.cuda.is_available()}")
+        print((not gpu is None) and torch.cuda.is_available())
         self.device = torch.device(
-            f"cuda:{gpu}" if gpu and torch.cuda.is_available() else "cpu"
+            f"cuda:{gpu}" if not gpu is None and torch.cuda.is_available() else "cpu"
         )
         print(f"The following device is selected: {self.device}")
         self.client_id: int = None

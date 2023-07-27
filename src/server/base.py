@@ -44,8 +44,9 @@ class ServerBase:
             self.args.local_epochs,
         )
         self.device = torch.device(
-            f"cuda:{self.args.gpu}" if self.args.gpu and torch.cuda.is_available() else "cpu"
+            f"cuda:{self.args.gpu}" if not self.args.gpu is None and torch.cuda.is_available() else "cpu"
         )
+        print(f"server is on {self.device}")
         fix_random_seed(self.args.seed)
         self.backbone = LeNet5
         self.logger = Console(
@@ -65,7 +66,7 @@ class ServerBase:
         self.global_params_dict: OrderedDict[str : torch.Tensor] = None
         if os.listdir(self.temp_dir) != [] and self.args.save_period > 0:
             if os.path.exists(self.temp_dir / "global_model.pt"):
-                self.global_params_dict = torch.load(self.temp_dir / "global_model.pt")
+                self.global_params_dict = torch.load(self.temp_dir / "global_model.pt", map_location=self.device)
                 self.logger.log("Find existed global model...")
 
             if os.path.exists(self.temp_dir / "epoch.pkl"):
