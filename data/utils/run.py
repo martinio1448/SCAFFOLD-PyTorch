@@ -98,7 +98,7 @@ def main(args):
             target_transform=target_transform,
         )
     else:  # NOTE: sort and partition
-        classes = len(ori_dataset.classes) if args.classes <= 0 else args.classes
+        classes = len(trainset.classes) if args.classes <= 0 else args.classes
         all_datasets, stats = randomly_assign_classes(
             ori_datasets=concat_datasets,
             target_dataset=target_dataset,

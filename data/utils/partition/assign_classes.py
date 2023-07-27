@@ -28,7 +28,8 @@ def sort_and_alloc(
     # assign
     idx_shard = [i for i in range(num_shards)]
     for i in range(num_clients):
-        rand_set = random.sample(idx_shard, num_classes)
+        rand_set = idx_shard[0: num_classes]
+        # rand_set = random.sample(idx_shard, num_classes)
         idx_shard = list(set(idx_shard) - set(rand_set))
         for rand in rand_set:
             dict_users[i] = np.concatenate(
