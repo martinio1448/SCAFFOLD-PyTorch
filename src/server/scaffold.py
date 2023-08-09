@@ -16,7 +16,7 @@ class SCAFFOLDServer(ServerBase):
         super(SCAFFOLDServer, self).__init__(get_args(), "SCAFFOLD")
 
         self.trainer = SCAFFOLDClient(
-            backbone=self.backbone(self.args.dataset),
+            backbone=self.backbone(self.args.dataset, self.colorized),
             dataset=self.args.dataset,
             batch_size=self.args.batch_size,
             local_epochs=self.args.local_epochs,

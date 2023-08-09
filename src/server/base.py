@@ -37,6 +37,7 @@ class ServerBase:
         self.algo = algo
         self.args = args
         self.colorized = False
+        print(f"Colorized: {args.colorized}")
         if self.args.colorized is not None:
             self.colorized = True
         # default log file format

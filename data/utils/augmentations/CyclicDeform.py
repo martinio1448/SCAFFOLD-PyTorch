@@ -26,7 +26,7 @@ class CyclicDeform:
         self.displacement = np.asarray((y*displacement_weights, x*displacement_weights))* stretch_intensity
 
     def __call__(self, sample: torch.tensor):
-        image = sample.permute(1, 2, 0).numpy()
+        image = sample.permute(1, 2, 0).numpy()[:,:,0]
         normalized = (image - np.min(image))/np.ptp(image)
 
         deformed = elasticdeform.deform_grid(normalized, self.displacement)

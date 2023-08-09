@@ -62,15 +62,20 @@ class ClientBase:
         self.untrainable_params: Dict[int, Dict[str, torch.Tensor]] = {}
         self.num_clients = num_clients
         self.global_dataset = self.get_client_global_dataset()
+        self.augment = augment
 
     @torch.no_grad()
-    def evaluate(self, use_valset=True, dataset: Subset = None):
+    def evaluate(self, use_valset=True, dataset: Subset = None, epoch: int = None):
         self.model.eval()
         criterion = torch.nn.CrossEntropyLoss(reduction="sum")
         loss= 0#torch.Tensor = torch.Tensor(0).to(self.device)
         correct = 0#torch.Tensor(0).to(self.device)
         if dataset is None:
             dataset = self.valset if use_valset else self.testset
+        if dataset.transform is None and self.augment:
+            if epoch is None:
+                epoch = 0
+            dataset.set_transform(self.get_transforms(epoch))
         dataloader = DataLoader(dataset, 32)
         for x, y in dataloader:
             x, y = x.to(self.device), y.to(self.device)
@@ -215,14 +220,21 @@ class ClientBase:
                 self.untrainable_params[self.client_id], strict=False
             )
 
-    def get_data_batch(self):
+    def get_batch_size(self):
         batch_size = (
             self.batch_size
             if self.batch_size > 0
             else int(len(self.trainset) / self.local_epochs)
         )
-        indices = torch.from_numpy(
-            np.random.choice(self.trainset.indices, batch_size)
-        ).long()
-        data, targets = self.trainset.dataset[indices]
+
+        return batch_size
+
+    def get_data_batch(self):
+        batch_size = self.get_batch_size()
+        sampler = torch.utils.data.DataLoader(self.trainset, batch_size = batch_size, shuffle=True)
+        data, targets = next(iter(sampler))
+        # indices = torch.from_numpy(
+        #     np.random.choice(self.trainset.subset.indices, batch_size)
+        # ).long()
+        # data, targets = self.trainset[indices]
         return data.to(self.device), targets.to(self.device)
