@@ -1,7 +1,8 @@
 from collections import OrderedDict
 from copy import deepcopy
-from typing import Dict, List, OrderedDict
+from typing import Dict, List, OrderedDict, Tuple
 
+import math
 import torch
 import os
 from rich.console import Console
@@ -19,6 +20,9 @@ class SCAFFOLDClient(ClientBase):
         local_lr: float,
         logger: Console,
         gpu: int,
+        output_dir: str,
+        num_client: int,
+        augment: bool
     ):
         super(SCAFFOLDClient, self).__init__(
             backbone,
@@ -28,9 +32,13 @@ class SCAFFOLDClient(ClientBase):
             local_lr,
             logger,
             gpu,
+            output_dir,
+            num_client,
+            augment
         )
         self.c_local: Dict[int, List[torch.Tensor]] = {}
         self.c_diff: List[torch.Tensor] = []
+        
 
     def train(
         self,
@@ -38,14 +46,21 @@ class SCAFFOLDClient(ClientBase):
         model_params: OrderedDict[str, torch.Tensor],
         c_global: List[torch.Tensor],
         round_number: int,
+        prev_acc: Tuple[int] = False,
         evaluate=True,
         verbose=True,
         use_valset=True,
     ):
         self.client_id = client_id
-        print(f"Train triggered for client {client_id} in round {round_number}")
+        # print(f"Train triggered for client {client_id} in round {round_number}")
         self.set_parameters(model_params)
-        self.get_client_local_dataset()
+
+        transforms = None
+        if(self.augment):
+            transforms = self.get_transforms(round_number)
+        
+        self.set_transforms_for_global_dataset(transforms)
+        self.get_client_local_dataset(transforms)
         if self.client_id not in self.c_local.keys():
             self.c_diff = c_global
         else:
@@ -54,7 +69,9 @@ class SCAFFOLDClient(ClientBase):
             # c_g: List[torch.Tensor]
             for c_l, c_g in zip(self.c_local[self.client_id], c_global):
                 self.c_diff.append(-c_l + c_g)
-        _, stats = self._log_while_training(evaluate, verbose, use_valset)()
+        # ds = self.get_client_global_dataset()
+        
+        _, stats = self._log_while_training(evaluate, verbose, use_valset, self.global_dataset["val"], prev_acc)()
         # update local control variate
         with torch.no_grad():
             trainable_parameters = filter(
@@ -85,7 +102,7 @@ class SCAFFOLDClient(ClientBase):
                 os.makedirs(path)
 
             
-            torch.save(c_plus, f"{path}/control_variates_c{client_id}_r{round_number}.pt")
+            torch.save(c_plus, f"{self.output_dir}/control_variates_c{client_id}_r{round_number}.pt")
 
             # compute c_delta
             for c_p, c_l in zip(c_plus, self.c_local[self.client_id]):
@@ -105,10 +122,16 @@ class SCAFFOLDClient(ClientBase):
         self.model.train()
         for _ in range(self.local_epochs):
             x, y = self.get_data_batch()
+            # if(len(self.model._parameters) == 0):
+            #     print(f"Model has no params for client {self.client_id}")
             logits = self.model(x)
             loss = self.criterion(logits, y)
+            if(math.isnan(loss.item())):
+                print(f"Encountered nan loss for client {self.client_id}!")
             self.optimizer.zero_grad()
             loss.backward()
             for param, c_d in zip(self.model.parameters(), self.c_diff):
                 param.grad += c_d.data
             self.optimizer.step()
+            # if(len(self.model._parameters) == 0):
+            #     print(f"Model has no params for client {self.client_id}")

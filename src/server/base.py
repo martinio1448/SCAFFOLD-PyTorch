@@ -36,6 +36,9 @@ class ServerBase:
     def __init__(self, args: Namespace, algo: str):
         self.algo = algo
         self.args = args
+        self.colorized = False
+        if self.args.colorized is not None:
+            self.colorized = True
         # default log file format
         self.log_name = "{}_{}_{}_{}.html".format(
             self.algo,
@@ -61,7 +64,7 @@ class ServerBase:
         if not os.path.isdir(self.temp_dir):
             os.makedirs(self.temp_dir)
 
-        _dummy_model = self.backbone(self.args.dataset).to(self.device)
+        _dummy_model = self.backbone(self.args.dataset, self.colorized).to(self.device)
         passed_epoch = 0
         self.global_params_dict: OrderedDict[str : torch.Tensor] = None
         if os.listdir(self.temp_dir) != [] and self.args.save_period > 0:

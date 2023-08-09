@@ -10,7 +10,11 @@ ARGS = {
 
 
 class LeNet5(nn.Module):
-    def __init__(self, dataset) -> None:
+    def __init__(self, dataset, colorized=False) -> None:
+        channel_count = ARGS[dataset][0]
+        if(colorized and channel_count == 1):
+            channel_count = 3
+
         super(LeNet5, self).__init__()
         self.net = nn.Sequential(
             nn.Conv2d(ARGS[dataset][0], 6, 5),

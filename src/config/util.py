@@ -60,4 +60,5 @@ def get_args() -> Namespace:
     parser.add_argument("--seed", type=int, default=17)
     parser.add_argument("--client_num_per_round", type=int, default=2)
     parser.add_argument("--save_period", type=int, default=20)
+    parser.add_argument("--output_dir", type=str, required=True)
     return parser.parse_args()

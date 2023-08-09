@@ -1,6 +1,7 @@
 import pickle
 import random
 
+import os
 import torch
 from rich.progress import track
 from tqdm import tqdm
@@ -22,7 +23,17 @@ class SCAFFOLDServer(ServerBase):
             local_lr=self.args.local_lr,
             logger=self.logger,
             gpu=self.args.gpu,
+            output_dir=self.args.output_dir,
+            num_client=self.client_num_in_total,
+            augment=self.args.augment
         )
+
+        if(not os.path.exists(self.args.output_dir)):
+            os.makedirs(self.args.output_dir)
+            os.makedirs(f"{self.args.output_dir}/control_variates")
+        else:
+            raise(Exception("output directory already exists. Please specify a different directory!"))
+        
         self.c_global = [
             torch.zeros_like(param).to(self.device)
             for param in self.backbone(self.args.dataset).parameters()
@@ -41,6 +52,7 @@ class SCAFFOLDServer(ServerBase):
             if not self.args.log
             else tqdm(range(self.global_epochs), "Training...")
         )
+        stats_cache = []
         for E in progress_bar:
 
             if E % self.args.verbose_gap == 0:
@@ -49,7 +61,11 @@ class SCAFFOLDServer(ServerBase):
             selected_clients = random.sample(
                 self.client_id_indices, self.args.client_num_per_round
             )
+
+            (loss, correct) = self.trainer.evaluate(True, self.trainer.global_dataset["val"])
+
             res_cache = []
+            round_stats_cache = [None] * len(self.client_id_indices)
             for client_id in selected_clients:
                 client_local_params = clone_parameters(self.global_params_dict)
                 res, stats = self.trainer.train(
@@ -57,23 +73,28 @@ class SCAFFOLDServer(ServerBase):
                     model_params=client_local_params,
                     c_global=self.c_global,
                     verbose=(E % self.args.verbose_gap) == 0,
-                    round_number=E
+                    round_number=E,
+                    prev_acc=(loss, correct)
                 )
                 res_cache.append(res)
 
                 self.num_correct[E].append(stats["correct"])
                 self.num_samples[E].append(stats["size"])
+                round_stats_cache[client_id] = stats
             self.aggregate(res_cache, E)
+            stats_cache.append(round_stats_cache)
 
             if E % self.args.save_period == 0 and self.args.save_period > 0:
                 torch.save(
                     self.global_params_dict,
-                    self.temp_dir / "global_model.pt",
+                    self.temp_dir / f"global_model_{E}.pt",
                 )
                 with open(self.temp_dir / "epoch.pkl", "wb") as f:
                     pickle.dump(E, f)
 
-            torch.cuda.empty_cache()
+        with open(f"{self.args.output_dir}/stats.pkl", "wb") as f:
+            pickle.dump(stats_cache, f)
+            # torch.cuda.empty_cache()
 
     def aggregate(self, res_cache, E: int):
         y_delta_cache = list(zip(*res_cache))[0]
@@ -101,7 +122,7 @@ class SCAFFOLDServer(ServerBase):
                 self.args.client_num_per_round / len(self.client_id_indices)
             ) * c_del
 
-        torch.save(self.c_global, f"data/control_variates/control_variates_global_r{E}.pt")
+        torch.save(self.c_global,  f"{self.args.output_dir}/control_variates/control_variates_global_r{E}.pt")
 
 
 if __name__ == "__main__":
