@@ -18,7 +18,8 @@ class CycleColor:
 
         background_mask = (image < image.min()+self.tolerance) & (image > image.min()-self.tolerance)
         digit_mask = ~background_mask
-        color_pic = torch.concat((image,)*3, axis=0)
-        color_pic[:,background_mask.squeeze()]  = self.rgb_background.unsqueeze(1)
-        color_pic[:,digit_mask.squeeze()]  = self.rgb_digit.unsqueeze(1)
+        color_pic = image.repeat_interleave(3, dim=1)
+        permuted_color_pic = color_pic.permute((0,2,3,1))
+        permuted_color_pic[background_mask.squeeze()]  = self.rgb_background
+        permuted_color_pic[digit_mask.squeeze()]  = self.rgb_digit
         return color_pic

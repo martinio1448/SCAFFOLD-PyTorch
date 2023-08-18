@@ -92,11 +92,11 @@ class ClientBase:
             dataset.set_transform(self.get_transforms(epoch))
         sampler = BatchSampler(SequentialSampler(dataset), 5000, drop_last=False)
         dataloader = DataLoader(dataset, sampler=sampler, batch_size=5000, drop_last=False)
-        l = len(dataloader)
+        l = len(sampler)
         export_imgs = []
-        with tqdm.tqdm(total=l, desc=f"Evaluating for client {self.client_id}", leave=True) as pbar:
+        with tqdm.tqdm(total=l, desc=f"Evaluating for client {self.client_id}", leave=True, position=1) as pbar:
 
-            for idx in enumerate(sampler):
+            for batch_num,idx in enumerate(sampler):
                 x,y = dataset[idx]
                 x, y = x.to(self.device), y.to(self.device)
                 export_index = random.sample(range(0, x.shape[0]), 1)[0]
@@ -181,8 +181,8 @@ class ClientBase:
 
     def get_transforms(self, epoch):
         data_transforms = transforms.Compose([
-            CyclicDeform(epoch=epoch, cycle= 100, control_points= (7,7), stretch_intensity=5),
-            CycleColor(epoch = epoch, cycle= 100, tolerance=0.3),
+            CyclicDeform(epoch=epoch, cycle= 100, img_size= (28,28), stretch_intensity=5, device=self.device),
+            CycleColor(epoch = epoch, cycle= 100, tolerance=0.3, device=self.device),
             # transforms.ToTensor()
         ])
 

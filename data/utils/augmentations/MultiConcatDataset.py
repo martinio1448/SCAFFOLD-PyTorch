@@ -79,7 +79,8 @@ class MultiConcatDataset(Dataset[T_co]):
             # print(d2_indices[:,dataset_samples][1].shape)
             # sample_indices = d2_indices[:,dataset_samples][1]
             # print(sample_indices.shape)
-            selected_data = self.datasets[dataset_id][list(d2_indices[:,dataset_samples][1])]
+            sample_indices = d2_indices[:,dataset_samples][1]
+            selected_data = self.datasets[dataset_id][sample_indices.tolist()]
             selected_ids = d2_indices[:,dataset_samples]
             # print("Selected Id Shape:")
             # print(selected_ids.shape)

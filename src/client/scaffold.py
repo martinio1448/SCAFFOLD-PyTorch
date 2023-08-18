@@ -132,10 +132,10 @@ class SCAFFOLDClient(ClientBase):
         total_steps = math.ceil(len(self.trainset)/batchsize)*self.local_epochs
         export_img: List[torch.Tensor] = []
         with tqdm.tqdm(total=total_steps, position=0, leave=True,  desc=f"Training model {self.client_id}") as pbar:
-            for current_epoch in range(2):
+            for current_epoch in range(self.local_epochs):
                 # print(f"Getting data for train of local epoch {current_epoch}")
-                for idx in enumerate(sampler):
-                    x,y = sampler[idx]
+                for batch_num, idx in enumerate(sampler):
+                    x,y = self.trainset[idx]
                     x, y = (x.to(self.device), y.to(self.device))
                     export_index = random.sample(range(0, x.shape[0]), 1)[0]
                     export_img.append(x[export_index])

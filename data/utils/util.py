@@ -9,6 +9,7 @@ from torch.utils.data import Subset, random_split, ConcatDataset
 import torch
 from data.utils import CudaDataset
 from data.utils.augmentations.AugmentedDataset import AugSet
+from data.utils.augmentations.MultiConcatDataset import MultiConcatDataset
 
 _CURRENT_DIR = Path(__file__).parent.abspath()
 _ARGS_DICT = json.load(open(_CURRENT_DIR.parent / "args.json", "r"))
@@ -33,9 +34,9 @@ def get_cached_datasets(
         "test": CudaDataset.CudaDataset(ds["test"], device),
         "val": CudaDataset.CudaDataset(ds["val"], device)} for ds in subset]
 
-    all_train = ConcatDataset([ds["train"] for ds in client_datasets])
-    all_test = ConcatDataset([ds["test"] for ds in client_datasets])
-    all_val = ConcatDataset([ds["val"] for ds in client_datasets])
+    all_train = MultiConcatDataset([ds["train"] for ds in client_datasets])
+    all_test = MultiConcatDataset([ds["test"] for ds in client_datasets])
+    all_val = MultiConcatDataset([ds["val"] for ds in client_datasets])
 
     global_dataset = {"train": AugSet(all_train), "test": AugSet(all_test), "val": AugSet(all_val)}
 
