@@ -1,11 +1,13 @@
 import os
 import pickle
 import random
+import datetime
 from argparse import Namespace
 from collections import OrderedDict
 
 import torch
 from path import Path
+from pathlib import Path as DirPath
 from rich.console import Console
 from rich.progress import track
 from tqdm import tqdm
@@ -30,10 +32,21 @@ sys.path.append(PROJECT_DIR)
 sys.path.append(DATA_DIR)
 from client.base import ClientBase
 from data.utils.util import get_client_id_indices
-
+from torch.utils.tensorboard import SummaryWriter
 
 class ServerBase:
     def __init__(self, args: Namespace, algo: str):
+        if(not os.path.exists(args.output_dir)):
+            os.makedirs(args.output_dir)
+            os.makedirs(f"{args.output_dir}/control_variates")
+        else:
+            path = DirPath(args.output_dir)
+            args.output_dir = f"{path.parents[0]}/{datetime.datetime.strftime(datetime.datetime.now(), '%Y_%m_%d_%H%M%S')}"
+            os.makedirs(args.output_dir)
+            os.makedirs(f"{args.output_dir}/control_variates")
+
+
+        self.writer = SummaryWriter(flush_secs=30)
         self.algo = algo
         self.args = args
         self.colorized = False
@@ -131,6 +144,8 @@ class ServerBase:
                 )
                 with open(self.temp_dir / "epoch.pkl", "wb") as f:
                     pickle.dump(E, f)
+
+        self.writer.close()
 
     @torch.no_grad()
     def aggregate(self, res_cache):
