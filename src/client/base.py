@@ -7,8 +7,10 @@ import torch
 import numpy as np
 from path import Path
 from rich.console import Console
-from torch.utils.data import Subset, DataLoader
+from torch.utils.data import Subset, DataLoader, BatchSampler, SequentialSampler
 from torchvision import transforms
+
+from data.utils.augmentations.MultiConcatDataset import MultiConcatDataset
 
 _CURRENT_DIR = Path(__file__).parent.abspath()
 
@@ -76,8 +78,10 @@ class ClientBase:
             if epoch is None:
                 epoch = 0
             dataset.set_transform(self.get_transforms(epoch))
-        dataloader = DataLoader(dataset, 32)
-        for x, y in dataloader:
+        sampler = BatchSampler(SequentialSampler(dataset), 5000, drop_last=False)
+        dataloader = DataLoader(dataset, sampler=sampler, batch_size=5000, drop_last=False)
+        for idx in sampler:
+            x,y = dataset[idx]
             x, y = x.to(self.device), y.to(self.device)
             # if(len(self.model._parameters) == 0):
             #     print(f"Model has no params for client {self.client_id}")
@@ -145,9 +149,9 @@ class ClientBase:
 
     def get_client_global_dataset(self):
         all_datasets = [get_dataset(self.dataset, i) for i in range(0, self.num_clients)]
-        all_train = torch.utils.data.ConcatDataset([ds["train"] for ds in all_datasets])
-        all_test = torch.utils.data.ConcatDataset([ds["test"] for ds in all_datasets])
-        all_val = torch.utils.data.ConcatDataset([ds["val"] for ds in all_datasets])
+        all_train = MultiConcatDataset([ds["train"] for ds in all_datasets])
+        all_test = MultiConcatDataset([ds["test"] for ds in all_datasets])
+        all_val = MultiConcatDataset([ds["val"] for ds in all_datasets])
 
         return {"train": AugSet(all_train), "test": AugSet(all_test), "val": AugSet(all_val)}
 
@@ -155,7 +159,7 @@ class ClientBase:
         data_transforms = transforms.Compose([
             CyclicDeform(epoch=epoch, cycle= 100, control_points= (7,7), stretch_intensity=5),
             CycleColor(epoch = epoch, cycle= 100, tolerance=0.3),
-            transforms.ToTensor()
+            # transforms.ToTensor()
         ])
 
         return data_transforms

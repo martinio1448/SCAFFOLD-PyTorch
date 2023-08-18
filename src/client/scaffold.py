@@ -4,6 +4,7 @@ from typing import Dict, List, OrderedDict, Tuple
 
 import math
 import torch
+from torch.utils.data import RandomSampler, BatchSampler
 import os
 from rich.console import Console
 
@@ -120,8 +121,13 @@ class SCAFFOLDClient(ClientBase):
 
     def _train(self):
         self.model.train()
-        for _ in range(self.local_epochs):
-            x, y = self.get_data_batch()
+        batch_size = 5000
+        sampler = BatchSampler(RandomSampler(self.trainset), 2500, drop_last=False)
+        loader = torch.utils.data.DataLoader(self.trainset, sampler=sampler)
+        for idx in sampler:
+            x,y= self.trainset[idx]
+            x,y = x.to(self.device), y.to(self.device)
+            # x, y = self.get_data_batch()
             # if(len(self.model._parameters) == 0):
             #     print(f"Model has no params for client {self.client_id}")
             logits = self.model(x)
