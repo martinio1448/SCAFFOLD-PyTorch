@@ -7,11 +7,13 @@ import torch
 import numpy as np
 from path import Path
 from rich.console import Console
-from torch.utils.data import Subset, DataLoader
+from torch.utils.data import Subset, DataLoader, BatchSampler, SequentialSampler
 from torchvision import transforms
 from torch.utils.tensorboard import SummaryWriter
 import random
 
+
+from data.utils.augmentations.MultiConcatDataset import MultiConcatDataset
 
 _CURRENT_DIR = Path(__file__).parent.abspath()
 
@@ -88,12 +90,14 @@ class ClientBase:
             if epoch is None:
                 epoch = 0
             dataset.set_transform(self.get_transforms(epoch))
-        dataloader = DataLoader(dataset, 2500)
+        sampler = BatchSampler(SequentialSampler(dataset), 5000, drop_last=False)
+        dataloader = DataLoader(dataset, sampler=sampler, batch_size=5000, drop_last=False)
         l = len(dataloader)
         export_imgs = []
         with tqdm.tqdm(total=l, desc=f"Evaluating for client {self.client_id}", leave=True) as pbar:
 
-            for batch_num, (x, y) in enumerate(dataloader):
+            for idx in enumerate(sampler):
+                x,y = dataset[idx]
                 x, y = x.to(self.device), y.to(self.device)
                 export_index = random.sample(range(0, x.shape[0]), 1)[0]
                 export_imgs.append(x[export_index])
@@ -167,18 +171,18 @@ class ClientBase:
         self.global_dataset["val"].set_transform(transforms)
         self.global_dataset["test"].set_transform(transforms)
 
-    # def get_client_global_dataset(self):
-    #     all_datasets = [get_dataset(self.dataset, i) for i in range(0, self.num_clients)]
-    #     all_train = torch.utils.data.ConcatDataset([ds["train"] for ds in all_datasets])
-    #     all_test = torch.utils.data.ConcatDataset([ds["test"] for ds in all_datasets])
-    #     all_val = torch.utils.data.ConcatDataset([ds["val"] for ds in all_datasets])
+    def get_client_global_dataset(self):
+        all_datasets = [get_dataset(self.dataset, i) for i in range(0, self.num_clients)]
+        all_train = MultiConcatDataset([ds["train"] for ds in all_datasets])
+        all_test = MultiConcatDataset([ds["test"] for ds in all_datasets])
+        all_val = MultiConcatDataset([ds["val"] for ds in all_datasets])
 
     #     return {"train": AugSet(all_train), "test": AugSet(all_test), "val": AugSet(all_val)}
 
     def get_transforms(self, epoch):
         data_transforms = transforms.Compose([
-            CyclicDeform(epoch=epoch, cycle= 100, img_size= (28,28), stretch_intensity=0.35, device=self.device),
-            CycleColor(epoch = epoch, cycle= 100, tolerance=0.3, device=self.device),
+            CyclicDeform(epoch=epoch, cycle= 100, control_points= (7,7), stretch_intensity=5),
+            CycleColor(epoch = epoch, cycle= 100, tolerance=0.3),
             # transforms.ToTensor()
         ])
 

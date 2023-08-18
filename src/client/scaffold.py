@@ -4,6 +4,7 @@ from typing import Dict, List, OrderedDict, Tuple
 import tqdm
 import math
 import torch
+from torch.utils.data import RandomSampler, BatchSampler
 import os
 import random
 from rich.console import Console
@@ -125,14 +126,17 @@ class SCAFFOLDClient(ClientBase):
     def _train(self, round_number:int):
         self.model.train()
         batchsize = self.get_batch_size()
-        sampler = torch.utils.data.DataLoader(self.trainset, batch_size = 2500, shuffle=True)
+        # sampler = torch.utils.data.DataLoader(self.trainset, batch_size = 2500, shuffle=True)
+        sampler = BatchSampler(RandomSampler(self.trainset), 2500, drop_last=False)
+        loader = torch.utils.data.DataLoader(self.trainset, sampler=sampler)
         total_steps = math.ceil(len(self.trainset)/batchsize)*self.local_epochs
         export_img: List[torch.Tensor] = []
         with tqdm.tqdm(total=total_steps, position=0, leave=True,  desc=f"Training model {self.client_id}") as pbar:
             for current_epoch in range(2):
                 # print(f"Getting data for train of local epoch {current_epoch}")
-                for batchnum, (data, targets) in enumerate(sampler):
-                    x, y = (data.to(self.device), targets.to(self.device))
+                for idx in enumerate(sampler):
+                    x,y = sampler[idx]
+                    x, y = (x.to(self.device), y.to(self.device))
                     export_index = random.sample(range(0, x.shape[0]), 1)[0]
                     export_img.append(x[export_index])
                     # print(f"Finished getting data for train of local epoch {current_epoch}")

@@ -17,10 +17,10 @@ class LeNet5(nn.Module):
 
         super(LeNet5, self).__init__()
         self.net = nn.Sequential(
-            nn.Conv2d(channel_count, 6, 5),
+            nn.Conv2d(channel_count, 12, 5),
             nn.ReLU(True),
             nn.MaxPool2d(2),
-            nn.Conv2d(6, 16, 5),
+            nn.Conv2d(12, 16, 5),
             nn.ReLU(True),
             nn.MaxPool2d(2),
             nn.Flatten(),
