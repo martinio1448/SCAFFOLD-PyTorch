@@ -10,3 +10,5 @@ cifar10
 cifar100
 synthetic
 *.json
+runs
+data/control_variates
