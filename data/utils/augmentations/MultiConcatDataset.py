@@ -25,7 +25,7 @@ T_co = TypeVar('T_co', covariant=True)
 from torch.utils.data import Dataset, IterableDataset
 
 
-class DultiConcatDataset(Dataset[T_co]):
+class MultiConcatDataset(Dataset[T_co]):
     r"""Dataset as a concatenation of multiple datasets.
 
     This class is useful to assemble different existing datasets.
