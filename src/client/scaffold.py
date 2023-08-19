@@ -153,8 +153,8 @@ class SCAFFOLDClient(ClientBase):
 
                 for param, c_d in zip(self.model.parameters(), self.c_diff):
                     param.grad += c_d.data
-
-        self.writer.add_images(f"client_{self.client_id}", torch.stack(export_img),  global_step=round_number)
+ 
+        self.writer.add_images(f"client_{self.client_id}", torch.stack(export_img),  round_number)
         
                 # if(len(self.model._parameters) == 0):
                 #     print(f"Model has no params for client {self.client_id}")
