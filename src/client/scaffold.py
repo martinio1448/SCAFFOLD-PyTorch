@@ -150,12 +150,13 @@ class SCAFFOLDClient(ClientBase):
                     print(f"Encountered nan loss for client {self.client_id}!")
                 self.optimizer.zero_grad()
                 loss.backward()
-                self.optimizer.step()
                 # pbar.update()
 
-            for param, c_d in zip(self.model.parameters(), self.c_diff):
-                param.grad += c_d.data
+                for param, c_d in zip(self.model.parameters(), self.c_diff):
+                    param.grad += c_d.data
  
+                self.optimizer.step()
+                
         self.writer.add_images(f"client_{self.client_id}", torch.stack(export_img),  round_number)
         
                 # if(len(self.model._parameters) == 0):
