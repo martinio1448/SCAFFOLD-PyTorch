@@ -7,6 +7,7 @@ import torch
 import numpy as np
 from path import Path
 from rich.console import Console
+from rich.progress import Progress
 from torch.utils.data import Subset, DataLoader, BatchSampler, SequentialSampler
 from torchvision import transforms
 from torch.utils.tensorboard import SummaryWriter
@@ -94,22 +95,22 @@ class ClientBase:
         dataloader = DataLoader(dataset, sampler=sampler, batch_size=5000, drop_last=False)
         l = len(sampler)
         export_imgs = []
-        with tqdm.tqdm(total=l, desc=f"Evaluating for client {self.client_id}", leave=True, position=1) as pbar:
+        # with tqdm.tqdm(total=l, desc=f"Evaluating for client {self.client_id}", leave=True, position=1) as pbar:
 
-            for batch_num,idx in enumerate(sampler):
-                x,y = dataset[idx]
-                x, y = x.to(self.device), y.to(self.device)
-                export_index = random.sample(range(0, x.shape[0]), 1)[0]
-                export_imgs.append(x[export_index])
-                # if(len(self.model._parameters) == 0):
-                #     print(f"Model has no params for client {self.client_id}")
-                logits = self.model(x).to(self.device)
-                loss += criterion(logits, y)
-                pred = torch.softmax(logits, -1).argmax(-1)#.to(self.device)
-                correct += (pred == y).int().sum()
-                if(math.isnan(loss.item())):
-                    print(f"Encountered nan loss for client {self.client_id}!")
-                pbar.update()
+        for batch_num,idx in enumerate(sampler):
+            x,y = dataset[idx]
+            x, y = x.to(self.device), y.to(self.device)
+            export_index = random.sample(range(0, x.shape[0]), 1)[0]
+            export_imgs.append(x[export_index])
+            # if(len(self.model._parameters) == 0):
+            #     print(f"Model has no params for client {self.client_id}")
+            logits = self.model(x).to(self.device)
+            loss += criterion(logits, y)
+            pred = torch.softmax(logits, -1).argmax(-1)#.to(self.device)
+            correct += (pred == y).int().sum()
+            if(math.isnan(loss.item())):
+                print(f"Encountered nan loss for client {self.client_id}!")
+            # pbar.update()
         
         self.writer.add_images(output_tag, torch.stack(export_imgs), epoch)
 
@@ -121,6 +122,7 @@ class ClientBase:
         model_params: OrderedDict[str, torch.Tensor],
         global_epoch: int,
         profiler: torch.profiler.profiler,
+        progress_tracker: Progress,
         evaluate=True,
         verbose=False,
         use_valset=True,
@@ -132,7 +134,7 @@ class ClientBase:
 
         self.get_client_local_dataset()
 
-        res, stats = self._log_while_training(evaluate, verbose, use_valset, self.global_dataset["val"], prev_acc=prev_acc)()
+        res, stats = self._log_while_training(evaluate, progress_tracker, verbose, use_valset, self.global_dataset["val"], prev_acc=prev_acc)()
         return res, stats
 
     def _train(self, round_number: int):
@@ -194,7 +196,7 @@ class ClientBase:
         self.valset = AugSet(datasets["val"], transforms)
         self.testset = AugSet(datasets["test"], transforms)
 
-    def _log_while_training(self, global_epoch:int, evaluate=True, verbose=False, use_valset=True, testset: Subset = None, prev_acc: Tuple[int] = None, profiler: torch.profiler.profiler.profile = None):
+    def _log_while_training(self, global_epoch:int, progress_tracker: Progress, evaluate=True, verbose=False, use_valset=True, testset: Subset = None, prev_acc: Tuple[int] = None, profiler: torch.profiler.profiler.profile = None):
         def _log_and_train(*args, **kwargs):
             current_global_epoch = global_epoch
             # print(f"Log and train in epoch {global_epoch}")
@@ -211,16 +213,26 @@ class ClientBase:
                 the_set = self.valset
 
             num_samples = len(the_set)
+            
+            task_progress = progress_tracker.add_task(f"Train client {self.client_id}", total=5)
+            
             if evaluate:
                 train_loss_before, train_loss_before = self.evaluate(use_valset=False)
+                progress_tracker.advance(task_progress, 1)
                 if (prev_acc is None):
                     loss_before, correct_before = self.evaluate(use_valset, the_set, current_global_epoch, f"client_{self.client_id}_eval")
                 else:
                     loss_before, correct_before = prev_acc
+                progress_tracker.advance(task_progress, 1)
+            else:
+                progress_tracker.advance(task_progress, 2)
             
+
             res = self._train(*args, **kwargs)
+            progress_tracker.advance(task_progress, 1)
+
             if(profiler is not None):
-                print("taking profiler step!")
+                # print("taking profiler step!")
                 profiler.step()
             else:
                 print("Profile is None!")
@@ -228,7 +240,12 @@ class ClientBase:
 
             if evaluate:
                 loss_after, correct_after = self.evaluate(use_valset, the_set, current_global_epoch, f"client_{self.client_id}_eval")
+                progress_tracker.advance(task_progress, 1)
+
                 train_loss_after, train_correct_after= self.evaluate(use_valset=False)
+                progress_tracker.advance(task_progress, 1)
+            else:
+                progress_tracker.advance(task_progress, 2)
 
             self.writer
 
@@ -263,7 +280,6 @@ class ClientBase:
             }
 
             self.writer.add_scalars(f"client_{self.client_id}", stats, global_step=current_global_epoch)
-
             return res, stats
 
         return _log_and_train
