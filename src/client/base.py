@@ -181,8 +181,8 @@ class ClientBase:
 
     def get_transforms(self, epoch):
         data_transforms = transforms.Compose([
-            CyclicDeform(epoch=epoch, cycle= 100, img_size= (28,28), stretch_intensity=5, device=self.device),
-            CycleColor(epoch = epoch, cycle= 100, tolerance=0.3, device=self.device),
+            CyclicDeform(epoch=epoch, cycle= 100, img_size= (28,28), stretch_intensity=0.35, device=self.device),
+            CycleColor(epoch = epoch, cycle= 100, tolerance=0.1, device=self.device),
             # transforms.ToTensor()
         ])
 

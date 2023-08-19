@@ -1,17 +1,3 @@
-class AugSet(Dataset):
-    def __init__(self, subset, transform=None):
-        self.subset = subset
-        self.transform = transform
-        
-    def __getitem__(self, index):
-        x, y = self.subset[index]
-        if self.transform:
-            x = self.transform(x)
-        return x, y
-        
-    def __len__(self):
-        return len(self.subset)
-
 import bisect
 import warnings
 import torch
@@ -39,7 +25,7 @@ T_co = TypeVar('T_co', covariant=True)
 from torch.utils.data import Dataset, IterableDataset
 
 
-class DultiConcatDataset(Dataset[T_co]):
+class MultiConcatDataset(Dataset[T_co]):
     r"""Dataset as a concatenation of multiple datasets.
 
     This class is useful to assemble different existing datasets.
