@@ -280,6 +280,7 @@ class ClientBase:
             }
 
             self.writer.add_scalars(f"client_{self.client_id}", stats, global_step=current_global_epoch)
+            progress_tracker.update(task_progress, visible=False)
             return res, stats
 
         return _log_and_train

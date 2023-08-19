@@ -81,7 +81,9 @@ class SCAFFOLDServer(ServerBase):
 
                     res_cache = []
                     round_stats_cache = [None] * len(self.client_id_indices)
-                    for client_id in selected_clients:
+                    
+                    client_task = pg.add_task("[Green]Training clients")
+                    for client_id in pg.track(selected_clients, task_id=client_task):
                         client_local_params = clone_parameters(self.global_params_dict)
                         res, stats = self.trainer.train(
                             client_id=client_id,
@@ -111,6 +113,8 @@ class SCAFFOLDServer(ServerBase):
 
                     with open(f"{self.args.output_dir}/stats_{E}.pkl", "wb") as f:
                         pickle.dump(stats_cache, f)
+                    
+                    pg.update(client_task, visible=False)
                     # torch.cuda.empty_cache()
 
     def aggregate(self, res_cache, E: int):
