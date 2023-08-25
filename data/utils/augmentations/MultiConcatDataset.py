@@ -45,24 +45,41 @@ class MultiConcatDataset(Dataset[T_co]):
             s += l
         return r
 
-    def __init__(self, datasets: Iterable[Dataset]) -> None:
+    def __init__(self, datasets: Iterable[Dataset], device: torch.cuda.Device) -> None:
         super().__init__()
+        self.device = device
         self.datasets = list(datasets)
         assert len(self.datasets) > 0, 'datasets should not be an empty iterable'  # type: ignore[arg-type]
         for d in self.datasets:
             assert not isinstance(d, IterableDataset), "ConcatDataset does not support IterableDataset"
         self.cumulative_sizes = self.cumsum(self.datasets)
+        self.t_cumulative_sizes = torch.as_tensor(self.cumulative_sizes).to(device)
 
     def __len__(self):
         return self.cumulative_sizes[-1]
 
     def __getitem__(self, idx):
-        dataset_idx = torch.as_tensor([bisect.bisect_right(self.cumulative_sizes, id_) for id_ in idx])
-        sample_idx = torch.as_tensor([i_d if d_id == 0 else i_d - self.cumulative_sizes[d_id - 1]  for i_d, d_id in zip(idx, dataset_idx)])
-        d2_indices =torch.stack((dataset_idx, sample_idx, torch.as_tensor(idx), torch.arange(0, len(idx))))
+        if isinstance(idx, slice):
+            start = idx.start
+            stop = idx.stop
+            step = idx.step
+            if start is None:
+                start = 0
+            if stop is None:
+                stop = self.__len__()
+            if step is None:
+                step = 1
+
+            idx = range(start, stop, step)
+
+        t_idx = torch.as_tensor(idx).to(self.device)
+        dataset_idx = torch.searchsorted(self.t_cumulative_sizes, t_idx, side="right")
+        sample_idx = t_idx.clone()
+        sample_idx[dataset_idx != 0] = t_idx[dataset_idx != 0] - self.t_cumulative_sizes[dataset_idx[dataset_idx != 0] -1]
+        d2_indices = torch.stack((dataset_idx, sample_idx, t_idx, torch.arange(0, len(idx)).to(self.device)))
 
         mapped_sample_indices = []
-        targets = []
+        targets = []    
         inputs = []
         # print(f"Retrieving samples from datasets with ids {torch.unique(dataset_idx)}")
         for dataset_id in torch.unique(dataset_idx):

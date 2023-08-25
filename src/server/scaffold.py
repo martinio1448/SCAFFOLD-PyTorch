@@ -35,7 +35,7 @@ class SCAFFOLDServer(ServerBase):
             torch.zeros_like(param).to(self.device)
             for param in self.backbone(self.args.dataset, self.colorized).parameters()
         ]
-        self.global_lr = 1.0
+        self.global_lr = self.args.global_lr
         self.training_acc = [[] for _ in range(self.global_epochs)]
 
     def train(self):
@@ -62,60 +62,74 @@ class SCAFFOLDServer(ServerBase):
 
             stats_cache = []
             print(f"outputting profiler to: {self.args.output_dir}/profiling")
-            with torch.profiler.profile(
-                on_trace_ready=self_trace,
-                record_shapes=True,
-                profile_memory=True,
-                with_stack=True,
-            ) as prof:
-                for E in pg.track(range(self.global_epochs), task_id=global_epoch_progress):
+            # with torch.profiler.profile(
+            #     activities=[torch.profiler.ProfilerActivity.CPU],
+            #     schedule=torch.profiler.schedule(
+            #         wait=1,
+            #         warmup=1,
+            #         active=8,
+            #         repeat=5),
+            #     on_trace_ready=self_trace,
+            #     record_shapes=False,
+            #     profile_memory=True,
+            #     with_stack=True,
+                
 
-                    if E % self.args.verbose_gap == 0:
-                        self.logger.log("=" * 30, f"ROUND: {E}", "=" * 30)
+            # ) as prof:
+            
+            for E in pg.track(range(self.global_epochs), task_id=global_epoch_progress):
 
-                    selected_clients = random.sample(
-                        self.client_id_indices, self.args.client_num_per_round
+                if E % self.args.verbose_gap == 0:
+                    self.logger.log("=" * 30, f"ROUND: {E}", "=" * 30)
+
+                selected_clients = random.sample(
+                    self.client_id_indices, self.args.client_num_per_round
+                )
+
+                (loss, correct) = self.trainer.evaluate(True, self.trainer.global_dataset["val"])
+
+                res_cache = []
+                round_stats_cache = [None] * len(self.client_id_indices)
+                
+                client_task = pg.add_task("[Green]Training clients")
+                for client_id in pg.track(selected_clients, task_id=client_task):
+                    client_local_params = clone_parameters(self.global_params_dict)
+                    # self.writer.open()
+                    res, stats = self.trainer.train(
+                        client_id=client_id,
+                        progress_tracker=pg,
+                        model_params=client_local_params,
+                        c_global=self.c_global,
+                        verbose=(E % self.args.verbose_gap) == 0,
+                        round_number=E,
+                        prev_acc=(loss, correct),
+                        profiler=None
                     )
+                    res_cache.append(res)
 
-                    (loss, correct) = self.trainer.evaluate(True, self.trainer.global_dataset["val"])
+                    self.num_correct[E].append(stats["correct"])
+                    self.num_samples[E].append(stats["size"])
+                    round_stats_cache[client_id] = stats
+                    self.writer.close()
+                self.aggregate(res_cache, E)
+                stats_cache.append(round_stats_cache)
 
-                    res_cache = []
-                    round_stats_cache = [None] * len(self.client_id_indices)
-                    
-                    client_task = pg.add_task("[Green]Training clients")
-                    for client_id in pg.track(selected_clients, task_id=client_task):
-                        client_local_params = clone_parameters(self.global_params_dict)
-                        res, stats = self.trainer.train(
-                            client_id=client_id,
-                            progress_tracker=pg,
-                            model_params=client_local_params,
-                            c_global=self.c_global,
-                            verbose=(E % self.args.verbose_gap) == 0,
-                            round_number=E,
-                            prev_acc=(loss, correct),
-                            profiler=prof
-                        )
-                        res_cache.append(res)
+                if E % self.args.save_period == 0 and self.args.save_period > 0:
+                    torch.save(
+                        self.global_params_dict,
+                        self.temp_dir / f"global_model_{E}.pt",
+                    )
+                    with open(self.temp_dir / "epoch.pkl", "wb") as f:
+                        pickle.dump(E, f)
 
-                        self.num_correct[E].append(stats["correct"])
-                        self.num_samples[E].append(stats["size"])
-                        round_stats_cache[client_id] = stats
-                    self.aggregate(res_cache, E)
-                    stats_cache.append(round_stats_cache)
+                with open(f"{self.args.output_dir}/stats_{E}.pkl", "wb") as f:
+                    pickle.dump(stats_cache, f)
+                
+                pg.update(client_task, visible=False)
+                # torch.cuda.empty_cache()
+            
+            self.logger.print("Finished Training!")
 
-                    if E % self.args.save_period == 0 and self.args.save_period > 0:
-                        torch.save(
-                            self.global_params_dict,
-                            self.temp_dir / f"global_model_{E}.pt",
-                        )
-                        with open(self.temp_dir / "epoch.pkl", "wb") as f:
-                            pickle.dump(E, f)
-
-                    with open(f"{self.args.output_dir}/stats_{E}.pkl", "wb") as f:
-                        pickle.dump(stats_cache, f)
-                    
-                    pg.update(client_task, visible=False)
-                    # torch.cuda.empty_cache()
 
     def aggregate(self, res_cache, E: int):
         y_delta_cache = list(zip(*res_cache))[0]

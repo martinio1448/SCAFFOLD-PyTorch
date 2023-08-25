@@ -51,7 +51,7 @@ class ServerBase:
         self.args = args
         self.colorized = False
         print(f"Colorized: {args.colorized}")
-        if self.args.colorized is not None:
+        if self.args.colorized is not None and self.args.colorized:
             self.colorized = True
         # default log file format
         self.log_name = "{}_{}_{}_{}.html".format(
@@ -137,13 +137,13 @@ class ServerBase:
                 self.num_samples[E].append(stats["size"])
             self.aggregate(res_cache)
 
-            if E % self.args.save_period == 0:
-                torch.save(
-                    self.global_params_dict,
-                    self.temp_dir / "global_model.pt",
-                )
-                with open(self.temp_dir / "epoch.pkl", "wb") as f:
-                    pickle.dump(E, f)
+            # if E % self.args.save_period == 0:
+            #     torch.save(
+            #         self.global_params_dict,
+            #         self.temp_dir / "global_model.pt",
+            #     )
+            #     with open(self.temp_dir / "epoch.pkl", "wb") as f:
+            #         pickle.dump(E, f)
 
         self.writer.close()
 
@@ -215,6 +215,7 @@ class ServerBase:
     def run(self):
         self.logger.log("Arguments:", dict(self.args._get_kwargs()))
         self.train()
+        self.logger.log("Moving to Test.")
         self.test()
         if self.args.log:
             if not os.path.isdir(LOG_DIR):

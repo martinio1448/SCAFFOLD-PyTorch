@@ -101,7 +101,7 @@ class ClientBase:
             x,y = dataset[idx]
             x, y = x.to(self.device), y.to(self.device)
             export_index = random.sample(range(0, x.shape[0]), 1)[0]
-            export_imgs.append(x[export_index])
+            export_imgs.append(x[export_index].to("cpu"))
             # if(len(self.model._parameters) == 0):
             #     print(f"Model has no params for client {self.client_id}")
             logits = self.model(x).to(self.device)
@@ -110,10 +110,13 @@ class ClientBase:
             correct += (pred == y).int().sum()
             if(math.isnan(loss.item())):
                 print(f"Encountered nan loss for client {self.client_id}!")
-            # pbar.update()
+            
+            del x,y
         
         self.writer.add_images(output_tag, torch.stack(export_imgs), epoch)
-
+        for pic in export_imgs:
+            del pic
+        del export_imgs
         return loss.item(), correct.item()
 
     def train(
@@ -173,19 +176,11 @@ class ClientBase:
         self.global_dataset["val"].set_transform(transforms)
         self.global_dataset["test"].set_transform(transforms)
 
-    def get_client_global_dataset(self):
-        all_datasets = [get_dataset(self.dataset, i) for i in range(0, self.num_clients)]
-        all_train = MultiConcatDataset([ds["train"] for ds in all_datasets])
-        all_test = MultiConcatDataset([ds["test"] for ds in all_datasets])
-        all_val = MultiConcatDataset([ds["val"] for ds in all_datasets])
-
-    #     return {"train": AugSet(all_train), "test": AugSet(all_test), "val": AugSet(all_val)}
-
     def get_transforms(self, epoch):
         data_transforms = transforms.Compose([
-            CyclicDeform(epoch=epoch, cycle= 100, img_size= (28,28), stretch_intensity=0.35, device=self.device),
+            CyclicDeform(epoch=epoch, cycle= 100, img_size= (28,28), stretch_intensity=0.2, device=self.device),
             CycleColor(epoch = epoch, cycle= 100, tolerance=0.1, device=self.device),
-            # transforms.ToTensor()
+            transforms.Normalize(mean=(0.3798, 0.3760, 0.3695) , std=(0.0461, 0.0469, 0.0455))
         ])
 
         return data_transforms
@@ -217,7 +212,7 @@ class ClientBase:
             task_progress = progress_tracker.add_task(f"Train client {self.client_id}", total=5)
             
             if evaluate:
-                train_loss_before, train_loss_before = self.evaluate(use_valset=False)
+                train_loss_before, train_correct_before = self.evaluate(use_valset=False)
                 progress_tracker.advance(task_progress, 1)
                 if (prev_acc is None):
                     loss_before, correct_before = self.evaluate(use_valset, the_set, current_global_epoch, f"client_{self.client_id}_eval")
@@ -231,13 +226,6 @@ class ClientBase:
             res = self._train(*args, **kwargs)
             progress_tracker.advance(task_progress, 1)
 
-            if(profiler is not None):
-                # print("taking profiler step!")
-                profiler.step()
-            else:
-                print("Profile is None!")
-
-
             if evaluate:
                 loss_after, correct_after = self.evaluate(use_valset, the_set, current_global_epoch, f"client_{self.client_id}_eval")
                 progress_tracker.advance(task_progress, 1)
@@ -246,8 +234,6 @@ class ClientBase:
                 progress_tracker.advance(task_progress, 1)
             else:
                 progress_tracker.advance(task_progress, 2)
-
-            self.writer
 
             if verbose:
                 self.logger.log(
@@ -279,7 +265,13 @@ class ClientBase:
                 "size": num_samples,
             }
 
+            if(profiler is not None):
+                # print("taking profiler step!")
+                profiler.step()
+                # print("Profile is None!")
+
             self.writer.add_scalars(f"client_{self.client_id}", stats, global_step=current_global_epoch)
+            self.writer.flush()
             progress_tracker.update(task_progress, visible=False)
             return res, stats
 

@@ -34,9 +34,11 @@ def get_cached_datasets(
         "test": CudaDataset.CudaDataset(ds["test"], device),
         "val": CudaDataset.CudaDataset(ds["val"], device)} for ds in subset]
 
-    all_train = MultiConcatDataset([ds["train"] for ds in client_datasets])
-    all_test = MultiConcatDataset([ds["test"] for ds in client_datasets])
-    all_val = MultiConcatDataset([ds["val"] for ds in client_datasets])
+    del subset
+
+    all_train = MultiConcatDataset([ds["train"] for ds in client_datasets], device=device)
+    all_test = MultiConcatDataset([ds["test"] for ds in client_datasets], device=device)
+    all_val = MultiConcatDataset([ds["val"] for ds in client_datasets], device=device)
 
     global_dataset = {"train": AugSet(all_train), "test": AugSet(all_test), "val": AugSet(all_val)}
 

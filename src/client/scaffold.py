@@ -78,7 +78,7 @@ class SCAFFOLDClient(ClientBase):
                 self.c_diff.append(-c_l + c_g)
         # ds = self.get_client_global_dataset()
         
-        _, stats = self._log_while_training(round_number, progress_tracker, evaluate, verbose, use_valset, self.global_dataset["val"], prev_acc, profiler=profiler)(round_number=round_number)
+        _, stats = self._log_while_training(round_number, progress_tracker, evaluate, verbose, use_valset, self.global_dataset["val"], prev_acc, profiler=profiler)(round_number=round_number, batch_size=len(self.trainset))
         # update local control variate
         with torch.no_grad():
             trainable_parameters = filter(
@@ -125,39 +125,35 @@ class SCAFFOLDClient(ClientBase):
 
         return (y_delta, c_delta), stats
 
-    def _train(self, round_number:int):
+    def _train(self, round_number:int, batch_size: int):
         self.model.train()
         batchsize = self.get_batch_size()
-        # sampler = torch.utils.data.DataLoader(self.trainset, batch_size = 2500, shuffle=True)
-        sampler = BatchSampler(RandomSampler(self.trainset), 2500, drop_last=False)
+        sampler = BatchSampler(RandomSampler(self.trainset), batch_size, drop_last=False)
         loader = torch.utils.data.DataLoader(self.trainset, sampler=sampler)
         total_steps = math.ceil(len(self.trainset)/batchsize)*self.local_epochs
         export_img: List[torch.Tensor] = []
-        # with tqdm.tqdm(total=total_steps, position=0, leave=True,  desc=f"Training model {self.client_id}") as pbar:
         for current_epoch in range(self.local_epochs):
-            # print(f"Getting data for train of local epoch {current_epoch}")
             for batch_num, idx in enumerate(sampler):
                 x,y = self.trainset[idx]
                 x, y = (x.to(self.device), y.to(self.device))
                 export_index = random.sample(range(0, x.shape[0]), 1)[0]
-                export_img.append(x[export_index])
-                # print(f"Finished getting data for train of local epoch {current_epoch}")
-                # if(len(self.model._parameters) == 0):
-                #     print(f"Model has no params for client {self.client_id}")
+                export_img.append(x[export_index].to("cpu"))
                 logits = self.model(x)
                 loss = self.criterion(logits, y)
                 if(math.isnan(loss.item())):
                     print(f"Encountered nan loss for client {self.client_id}!")
                 self.optimizer.zero_grad()
                 loss.backward()
-                # pbar.update()
-
+                # torch.nn.utils.clip_grad_norm(self.model.parameters(), 5)
                 for param, c_d in zip(self.model.parameters(), self.c_diff):
                     param.grad += c_d.data
  
                 self.optimizer.step()
+                del x,y
                 
         self.writer.add_images(f"client_{self.client_id}", torch.stack(export_img),  round_number)
-        
+        for pic in export_img:
+            del pic
+        del export_img
                 # if(len(self.model._parameters) == 0):
                 #     print(f"Model has no params for client {self.client_id}")

@@ -47,6 +47,7 @@ def get_args() -> Namespace:
     parser.add_argument("--global_epochs", type=int, default=100)
     parser.add_argument("--local_epochs", type=int, default=10)
     parser.add_argument("--local_lr", type=float, default=1e-2)
+    parser.add_argument("--global_lr", type=float, default=1)
     parser.add_argument("--verbose_gap", type=int, default=20)
     parser.add_argument(
         "--dataset",
@@ -61,6 +62,6 @@ def get_args() -> Namespace:
     parser.add_argument("--client_num_per_round", type=int, default=2)
     parser.add_argument("--save_period", type=int, default=20)
     parser.add_argument("--output_dir", type=str, required=True)
-    parser.add_argument("--colorized", type=bool, required=True)
-    parser.add_argument("--augment", type=bool, required=True)
+    parser.add_argument("--colorized", type=bool, default=False)
+    parser.add_argument("--augment", type=bool, default=False)
     return parser.parse_args()

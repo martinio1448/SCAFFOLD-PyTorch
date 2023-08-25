@@ -4,6 +4,7 @@ class CudaDataset(Dataset):
     def __init__(self, internal_dataset: Dataset, device):
         inputs, targets = internal_dataset[:]
         self.inputs, self.targets = inputs.to(device), targets.to(device)
+        del inputs, targets, internal_dataset
     def __len__(self):
         return len(self.inputs)
 
