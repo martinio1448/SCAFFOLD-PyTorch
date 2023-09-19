@@ -11,4 +11,4 @@ cifar100
 synthetic
 *.json
 runs
-data/control_variates
+data/control_variates 

@@ -26,6 +26,7 @@ from data.utils.util import get_cached_datasets, get_dataset
 from data.utils.augmentations.AugmentedDataset import AugSet
 from data.utils.augmentations.colorcycle import CycleColor
 from data.utils.augmentations.CyclicDeform import CyclicDeform
+from data.utils.augmentations.ExpandToRGB import ExpandToRGB
 
 class ClientBase:
     def __init__(
@@ -74,7 +75,7 @@ class ClientBase:
         self.augment = augment
 
     @torch.no_grad()
-    def evaluate(self, use_valset=True, dataset: Subset = None, epoch: int = None, output_tag: str = None):
+    def evaluate(self, epoch:int, use_valset=True, dataset: Subset = None, output_tag: str = None, transforms: transforms.Compose = None):
         self.model.eval()
         criterion = torch.nn.CrossEntropyLoss(reduction="sum")
         loss= 0#torch.Tensor = torch.Tensor(0).to(self.device)
@@ -84,13 +85,10 @@ class ClientBase:
         if dataset is None:
             if use_valset:
                 dataset = self.valset 
-                f"client_{self.client_id}"
             else:
                 dataset = self.testset
-        if dataset.transform is None and self.augment:
-            if epoch is None:
-                epoch = 0
-            dataset.set_transform(self.get_transforms(epoch))
+        if transforms is not None:
+            dataset.set_transform(transforms)
         sampler = BatchSampler(SequentialSampler(dataset), 5000, drop_last=False)
         dataloader = DataLoader(dataset, sampler=sampler, batch_size=5000, drop_last=False)
         l = len(sampler)
@@ -167,7 +165,7 @@ class ClientBase:
         #     self.get_client_global_dataset()
         # else:
         self.get_client_local_dataset()
-        loss, correct = self.evaluate()
+        loss, correct = self.evaluate(transforms=self.get_test_transforms(), epoch=-1)
         stats = {"loss": loss, "correct": correct, "size": len(self.testset)}
         return stats
 
@@ -176,11 +174,26 @@ class ClientBase:
         self.global_dataset["val"].set_transform(transforms)
         self.global_dataset["test"].set_transform(transforms)
 
-    def get_transforms(self, epoch):
+    def get_test_transforms(self, epoch):
         data_transforms = transforms.Compose([
-            CyclicDeform(epoch=epoch, cycle= 100, img_size= (28,28), stretch_intensity=0.2, device=self.device),
-            CycleColor(epoch = epoch, cycle= 100, tolerance=0.1, device=self.device),
-            transforms.Normalize(mean=(0.3798, 0.3760, 0.3695) , std=(0.0461, 0.0469, 0.0455))
+            ExpandToRGB(),
+            transforms.Resize((100,100))
+
+        ])
+
+        return data_transforms
+        
+
+    def get_train_transforms(self, epoch):
+        # if(self.client_id == 4 or self.client_id == 8) and epoch >= 300:
+        #     epoch = epoch + 50
+        shift = int(np.ceil((self.client_id+1)/2)*10*2)
+        print(f"Shifting client {self.client_id} to shift {shift}")
+        data_transforms = transforms.Compose([
+            CyclicDeform(epoch=shift, cycle= 100, img_size= (28,28), stretch_intensity=0.2, device=self.device),
+            CycleColor(epoch = shift, cycle= 100, background_tolerance=0.1, device=self.device, generation_range=10, style_count=500),
+            transforms.Normalize(mean=(0.3798, 0.3760, 0.3695) , std=(0.0461, 0.0469, 0.0455)),
+            transforms.Resize((100,100))
         ])
 
         return data_transforms
@@ -195,7 +208,7 @@ class ClientBase:
         def _log_and_train(*args, **kwargs):
             current_global_epoch = global_epoch
             # print(f"Log and train in epoch {global_epoch}")
-            the_set = testset
+            global_testset = testset
             loss_before = 0
             loss_after = 0
             correct_before = 0
@@ -204,40 +217,47 @@ class ClientBase:
             train_correct_before = 0
             train_loss_before = 0
             train_loss_after = 0
-            if the_set is None:
-                the_set = self.valset
+            if global_testset is None:
+                global_testset = self.valset
 
-            num_samples = len(the_set)
+            num_samples = len(global_testset)
             
             task_progress = progress_tracker.add_task(f"Train client {self.client_id}", total=5)
             
+
             if evaluate:
-                train_loss_before, train_correct_before = self.evaluate(use_valset=False)
+
+                #Test global model on local test data
+                train_loss_before, train_correct_before = self.evaluate(dataset=self.testset, epoch=current_global_epoch, output_tag=f"client_{self.client_id}_local_eval_before")
                 progress_tracker.advance(task_progress, 1)
                 if (prev_acc is None):
-                    loss_before, correct_before = self.evaluate(use_valset, the_set, current_global_epoch, f"client_{self.client_id}_eval")
+                    #test global model on global testset --> Only do this once per round, then pass on the values
+                    loss_before, correct_before = self.evaluate(dataset = global_testset, epoch=current_global_epoch, output_tag= f"client_{self.client_id}_global_eval_before")
                 else:
                     loss_before, correct_before = prev_acc
                 progress_tracker.advance(task_progress, 1)
             else:
                 progress_tracker.advance(task_progress, 2)
             
-
-            res = self._train(*args, **kwargs)
-            progress_tracker.advance(task_progress, 1)
+            
+            #train model on local data
+            res = self._train(*args, task_progress=task_progress, **kwargs)
+            progress_tracker.update(task_progress, total=3)
 
             if evaluate:
-                loss_after, correct_after = self.evaluate(use_valset, the_set, current_global_epoch, f"client_{self.client_id}_eval")
+                #test local model on local train data
+                train_loss_after, train_correct_after= self.evaluate(dataset=self.testset, epoch=current_global_epoch, output_tag=f"client_{self.client_id}_local_eval_after")
                 progress_tracker.advance(task_progress, 1)
 
-                train_loss_after, train_correct_after= self.evaluate(use_valset=False)
+                #Test local model on global data
+                loss_after, correct_after = self.evaluate(dataset=global_testset,epoch= current_global_epoch, output_tag= f"client_{self.client_id}_global_eval_after")
                 progress_tracker.advance(task_progress, 1)
             else:
                 progress_tracker.advance(task_progress, 2)
 
             if verbose:
                 self.logger.log(
-                    "client [{}]   [bold red]test loss: {:.4f} -> {:.4f}    [bold blue]test accuracy: {:.2f}% -> {:.2f} [bold red]train loss: {:.4f} -> {:.4f}   [bold blue]train accuracy: {:.2f}% -> {:.2f}%".format(
+                    "client [{}]   [bold red]test loss: {:.4f} -> {:.4f}    [bold blue]test accuracy: {:.2f}% -> {:.2f}% [bold red]train loss: {:.4f} -> {:.4f}   [bold blue]train accuracy: {:.2f}% -> {:.2f}%".format(
                         self.client_id,
                         loss_before / num_samples,
                         loss_after / num_samples,

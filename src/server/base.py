@@ -18,7 +18,7 @@ import sys
 
 sys.path.append(_CURRENT_DIR.parent)
 
-from config.models import LeNet5
+from config.models import LeNet5, Resnet18
 from config.util import (
     DATA_DIR,
     LOG_DIR,
@@ -39,14 +39,17 @@ class ServerBase:
         if(not os.path.exists(args.output_dir)):
             os.makedirs(args.output_dir)
             os.makedirs(f"{args.output_dir}/control_variates")
+            os.makedirs(f"{args.output_dir}/tensorboard")
         else:
             path = DirPath(args.output_dir)
             args.output_dir = f"{path.parents[0]}/{datetime.datetime.strftime(datetime.datetime.now(), '%Y_%m_%d_%H%M%S')}"
             os.makedirs(args.output_dir)
             os.makedirs(f"{args.output_dir}/control_variates")
+            os.makedirs(f"{args.output_dir}/tensorboard")
 
 
-        self.writer = SummaryWriter(flush_secs=30)
+
+        self.writer = SummaryWriter(flush_secs=30, log_dir=f"{args.output_dir}/tensorboard")
         self.algo = algo
         self.args = args
         self.colorized = False
@@ -65,7 +68,7 @@ class ServerBase:
         )
         print(f"server is on {self.device}")
         fix_random_seed(self.args.seed)
-        self.backbone = LeNet5
+        self.backbone = Resnet18
         self.logger = Console(
             record=True,
             log_path=False,
@@ -81,7 +84,7 @@ class ServerBase:
         _dummy_model = self.backbone(self.args.dataset, self.colorized).to(self.device)
         passed_epoch = 0
         self.global_params_dict: OrderedDict[str : torch.Tensor] = None
-        if os.listdir(self.temp_dir) != [] and self.args.save_period > 0:
+        if False: #os.listdir(self.temp_dir) != [] and self.args.save_period > 0:
             if os.path.exists(self.temp_dir / "global_model.pt"):
                 self.global_params_dict = torch.load(self.temp_dir / "global_model.pt", map_location=self.device)
                 self.logger.log("Find existed global model...")

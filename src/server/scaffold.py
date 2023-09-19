@@ -31,9 +31,14 @@ class SCAFFOLDServer(ServerBase):
             writer=self.writer
         )
       
+        temp_backbone = self.backbone(self.args.dataset, self.colorized)
+        global_trainable_parameters = filter(
+                lambda p: p.requires_grad, temp_backbone.parameters()
+            )
+        
         self.c_global = [
             torch.zeros_like(param).to(self.device)
-            for param in self.backbone(self.args.dataset, self.colorized).parameters()
+            for param in global_trainable_parameters
         ]
         self.global_lr = self.args.global_lr
         self.training_acc = [[] for _ in range(self.global_epochs)]
@@ -54,14 +59,14 @@ class SCAFFOLDServer(ServerBase):
         with Progress(console=self.logger) as pg:
             global_epoch_progress = pg.add_task("[bold green]Global Training...")
 
-            handler = torch.profiler.tensorboard_trace_handler(f"{self.args.output_dir}/profiling")
+            # handler = torch.profiler.tensorboard_trace_handler(f"{self.args.output_dir}/profiling")
 
-            def self_trace(*args, **kwargs):
-                print("Trace_Ready")
-                handler(*args, **kwargs)
+            # def self_trace(*args, **kwargs):
+            #     print("Trace_Ready")
+            #     handler(*args, **kwargs)
 
             stats_cache = []
-            print(f"outputting profiler to: {self.args.output_dir}/profiling")
+            # print(f"outputting profiler to: {self.args.output_dir}/profiling")
             # with torch.profiler.profile(
             #     activities=[torch.profiler.ProfilerActivity.CPU],
             #     schedule=torch.profiler.schedule(
@@ -86,7 +91,10 @@ class SCAFFOLDServer(ServerBase):
                     self.client_id_indices, self.args.client_num_per_round
                 )
 
-                (loss, correct) = self.trainer.evaluate(True, self.trainer.global_dataset["val"])
+                selected_clients.sort()
+
+                self.trainer.set_parameters(clone_parameters(self.global_params_dict))
+                (loss, correct) = self.trainer.evaluate(dataset=self.trainer.global_dataset["test"], epoch=E, output_tag="global_val", transforms=self.trainer.get_test_transforms(E))
 
                 res_cache = []
                 round_stats_cache = [None] * len(self.client_id_indices)
@@ -146,6 +154,7 @@ class SCAFFOLDServer(ServerBase):
             ],
             device=self.device,
         )
+        
         for param, y_del in zip(trainable_parameter, zip(*y_delta_cache)):
             x_del = torch.sum(avg_weight * torch.stack(y_del, dim=-1), dim=-1)
             param.data += self.global_lr * x_del

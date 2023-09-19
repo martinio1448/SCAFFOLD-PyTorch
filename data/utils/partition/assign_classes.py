@@ -24,13 +24,25 @@ def sort_and_alloc(
     # corresponding labels after sorting are [0, .., 0, 1, ..., 1, ...]
     idxs_labels = idxs_labels[:, idxs_labels[1, :].argsort()]
     idxs = idxs_labels[0, :]
+    
 
     # assign
     idx_shard = [i for i in range(num_shards)]
+    constant_idx_shards = np.asarray(idx_shard)
+    reshaped_idx_shards = constant_idx_shards.reshape((20, 5))
     for i in range(num_clients):
-        rand_set = idx_shard[0: num_classes]
-        # rand_set = random.sample(idx_shard, num_classes)
+        if len(idx_shard) >= num_classes:
+            # rand_set = np.array((reshaped_idx_shards[i],reshaped_idx_shards[i+10])).reshape((10)) #For assignment of 2 digits to each client, with 5 clients. 2 clients are grouped on the same digit
+            # rand_set = constant_idx_shards.reshape((20, 5))[i] #For assignment of 0-4 digits, with 2 clients for each digit
+            # rand_set = constant_idx_shards.reshape((num_classes, num_clients)).T[i] #for assignment of one digit per client
+            #rand_set = idx_shard[num_classes//2: num_classes+num_classes//2] for assignment of two digits per client
+            rand_set = constant_idx_shards.reshape((10,10)).T[i]
+        else:
+            rand_set = idx_shard[: num_classes]
+            # rand_set = random.sample(idx_shard, 2)
+        # print(rand_set)
         idx_shard = list(set(idx_shard) - set(rand_set))
+        # print(rand_set, idx_shard)
         for rand in rand_set:
             dict_users[i] = np.concatenate(
                 (

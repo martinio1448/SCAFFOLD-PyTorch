@@ -63,10 +63,11 @@ class SCAFFOLDClient(ClientBase):
         self.set_parameters(model_params)
 
         transforms = None
+        eval_transforms = self.get_test_transforms(round_number)
         if(self.augment):
-            transforms = self.get_transforms(round_number)
+            transforms = self.get_train_transforms(round_number)
         
-        self.set_transforms_for_global_dataset(transforms)
+        self.set_transforms_for_global_dataset(eval_transforms)
         self.get_client_local_dataset(transforms)
         if self.client_id not in self.c_local.keys():
             self.c_diff = c_global
@@ -78,17 +79,23 @@ class SCAFFOLDClient(ClientBase):
                 self.c_diff.append(-c_l + c_g)
         # ds = self.get_client_global_dataset()
         
-        _, stats = self._log_while_training(round_number, progress_tracker, evaluate, verbose, use_valset, self.global_dataset["val"], prev_acc, profiler=profiler)(round_number=round_number, batch_size=len(self.trainset))
+        _, stats = self._log_while_training(round_number, progress_tracker, evaluate, verbose, use_valset, self.global_dataset["val"], prev_acc, profiler=profiler)(round_number=round_number, batch_size=self.batch_size, progress_tracker=progress_tracker)
+        
         # update local control variate
+        global_trainable_parameters = list(filter(
+            lambda p: p.requires_grad, model_params.values()
+        ))
+
+        local_trainable_parameters = list(filter(
+            lambda p: p.requires_grad, self.model.parameters()
+        ))
+
         with torch.no_grad():
-            trainable_parameters = filter(
-                lambda p: p.requires_grad, model_params.values()
-            )
 
             if self.client_id not in self.c_local.keys():
                 self.c_local[self.client_id] = [
                     torch.zeros_like(param, device=self.device)
-                    for param in self.model.parameters()
+                    for param in local_trainable_parameters
                 ]
 
             y_delta = []
@@ -96,7 +103,7 @@ class SCAFFOLDClient(ClientBase):
             c_delta = []
 
             # compute y_delta (difference of model before and after training)
-            for param_l, param_g in zip(self.model.parameters(), trainable_parameters):
+            for param_l, param_g in zip(local_trainable_parameters, global_trainable_parameters):
                 y_delta.append(param_l - param_g)
 
             # compute c_plus
@@ -104,9 +111,9 @@ class SCAFFOLDClient(ClientBase):
             for c_l, c_g, diff in zip(self.c_local[self.client_id], c_global, y_delta):
                 c_plus.append(c_l - c_g - coef * diff)
 
-            path="./data/control_variates"
-            if not(os.path.exists(path)):
-                os.makedirs(path)
+            # path="./data/control_variates"
+            # if not(os.path.exists(path)):
+            #     os.makedirs(path)
 
             
             torch.save(c_plus, f"{self.output_dir}/control_variates_c{client_id}_r{round_number}.pt")
@@ -125,13 +132,14 @@ class SCAFFOLDClient(ClientBase):
 
         return (y_delta, c_delta), stats
 
-    def _train(self, round_number:int, batch_size: int):
+    def _train(self, round_number:int, batch_size: int, progress_tracker: Progress, task_progress):
         self.model.train()
         batchsize = self.get_batch_size()
         sampler = BatchSampler(RandomSampler(self.trainset), batch_size, drop_last=False)
         loader = torch.utils.data.DataLoader(self.trainset, sampler=sampler)
         total_steps = math.ceil(len(self.trainset)/batchsize)*self.local_epochs
         export_img: List[torch.Tensor] = []
+        total_steps = 1/(sampler.__len__() * self.local_epochs)
         for current_epoch in range(self.local_epochs):
             for batch_num, idx in enumerate(sampler):
                 x,y = self.trainset[idx]
@@ -140,16 +148,27 @@ class SCAFFOLDClient(ClientBase):
                 export_img.append(x[export_index].to("cpu"))
                 logits = self.model(x)
                 loss = self.criterion(logits, y)
+
+                # l2_lambda = 0.01
+                # l2_regularization = torch.tensor(0., requires_grad=True)
+                # for name, param in self.model.named_parameters():
+                #     if 'bias' not in name:
+                #         l2_regularization = l2_regularization + torch.norm(param, p=2)
+
+                # loss += l2_regularization * l2_lambda
+
                 if(math.isnan(loss.item())):
                     print(f"Encountered nan loss for client {self.client_id}!")
                 self.optimizer.zero_grad()
                 loss.backward()
                 # torch.nn.utils.clip_grad_norm(self.model.parameters(), 5)
                 for param, c_d in zip(self.model.parameters(), self.c_diff):
-                    param.grad += c_d.data
+                    if(param.grad is not None):
+                        param.grad += c_d.data
  
                 self.optimizer.step()
                 del x,y
+                progress_tracker.advance(task_progress, total_steps)
                 
         self.writer.add_images(f"client_{self.client_id}", torch.stack(export_img),  round_number)
         for pic in export_img:
