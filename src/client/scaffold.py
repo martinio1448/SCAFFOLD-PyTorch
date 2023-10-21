@@ -73,6 +73,7 @@ class SCAFFOLDClient(ClientBase):
             self.c_diff = c_global
         else:
             self.c_diff = []
+            self.c_local[self.client_id] = [v.to(self.device) for v in self.c_local[self.client_id]]
             # c_l: List[torch.Tensor]
             # c_g: List[torch.Tensor]
             for c_l, c_g in zip(self.c_local[self.client_id], c_global):
@@ -92,11 +93,15 @@ class SCAFFOLDClient(ClientBase):
 
         with torch.no_grad():
 
+            c_local = []
+
             if self.client_id not in self.c_local.keys():
                 self.c_local[self.client_id] = [
-                    torch.zeros_like(param, device=self.device)
+                    torch.zeros_like(param, device="cpu")
                     for param in local_trainable_parameters
                 ]
+                
+            gpu_c_local = [v.to(self.device) for v in self.c_local[self.client_id]]
 
             y_delta = []
             c_plus = []
@@ -108,7 +113,7 @@ class SCAFFOLDClient(ClientBase):
 
             # compute c_plus
             coef = 1 / (self.local_epochs * self.local_lr)
-            for c_l, c_g, diff in zip(self.c_local[self.client_id], c_global, y_delta):
+            for c_l, c_g, diff in zip(gpu_c_local, c_global, y_delta):
                 c_plus.append(c_l - c_g - coef * diff)
 
             # path="./data/control_variates"
@@ -119,10 +124,12 @@ class SCAFFOLDClient(ClientBase):
             torch.save(c_plus, f"{self.output_dir}/control_variates_c{client_id}_r{round_number}.pt")
 
             # compute c_delta
-            for c_p, c_l in zip(c_plus, self.c_local[self.client_id]):
+            for c_p, c_l in zip(c_plus, gpu_c_local):
                 c_delta.append(c_p - c_l)
 
-            self.c_local[self.client_id] = c_plus
+            self.c_local[self.client_id] = [v.to("cpu") for v in c_plus]
+
+            del c_plus
 
         if self.client_id not in self.untrainable_params.keys():
             self.untrainable_params[self.client_id] = {}
@@ -130,11 +137,13 @@ class SCAFFOLDClient(ClientBase):
             if not param.requires_grad:
                 self.untrainable_params[self.client_id][name] = param.clone()
 
-        return (y_delta, c_delta), stats
+        return (y_delta, c_delta), stats, self.c_local[self.client_id]
 
     def _train(self, round_number:int, batch_size: int, progress_tracker: Progress, task_progress):
         self.model.train()
         batchsize = self.get_batch_size()
+        if batch_size < 1:
+            batch_size = len(self.trainset)
         sampler = BatchSampler(RandomSampler(self.trainset), batch_size, drop_last=False)
         loader = torch.utils.data.DataLoader(self.trainset, sampler=sampler)
         total_steps = math.ceil(len(self.trainset)/batchsize)*self.local_epochs
@@ -161,10 +170,10 @@ class SCAFFOLDClient(ClientBase):
                     print(f"Encountered nan loss for client {self.client_id}!")
                 self.optimizer.zero_grad()
                 loss.backward()
-                # torch.nn.utils.clip_grad_norm(self.model.parameters(), 5)
+                # torch.nn.utils.clip_grad_norm(self.model.parameters(), 4)
                 for param, c_d in zip(self.model.parameters(), self.c_diff):
                     if(param.grad is not None):
-                        param.grad += c_d.data
+                        param.grad += c_d.data*x.shape[0]/len(self.trainset)
  
                 self.optimizer.step()
                 del x,y

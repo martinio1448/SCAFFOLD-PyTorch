@@ -12,6 +12,7 @@ from torch.utils.data import Subset, DataLoader, BatchSampler, SequentialSampler
 from torchvision import transforms
 from torch.utils.tensorboard import SummaryWriter
 import random
+from data.utils.augmentations.LabelSwap import LabelSwap
 
 
 from data.utils.augmentations.MultiConcatDataset import MultiConcatDataset
@@ -165,7 +166,7 @@ class ClientBase:
         #     self.get_client_global_dataset()
         # else:
         self.get_client_local_dataset()
-        loss, correct = self.evaluate(transforms=self.get_test_transforms(), epoch=-1)
+        loss, correct = self.evaluate(-1, transforms=self.get_test_transforms(0))
         stats = {"loss": loss, "correct": correct, "size": len(self.testset)}
         return stats
 
@@ -177,26 +178,31 @@ class ClientBase:
     def get_test_transforms(self, epoch):
         data_transforms = transforms.Compose([
             ExpandToRGB(),
-            transforms.Resize((100,100))
+            transforms.Resize((100,100), antialias=False)
 
         ])
 
-        return data_transforms
+        return data_transforms, None
         
 
     def get_train_transforms(self, epoch):
         # if(self.client_id == 4 or self.client_id == 8) and epoch >= 300:
         #     epoch = epoch + 50
-        shift = int(np.ceil((self.client_id+1)/2)*10*2)
-        print(f"Shifting client {self.client_id} to shift {shift}")
+        group = np.ceil((self.client_id+1)/2)-1
+        shift = int(group*10*2)
+        print(f"Shifting client {self.client_id} to group {group} with shift {shift}")
         data_transforms = transforms.Compose([
             CyclicDeform(epoch=shift, cycle= 100, img_size= (28,28), stretch_intensity=0.2, device=self.device),
             CycleColor(epoch = shift, cycle= 100, background_tolerance=0.1, device=self.device, generation_range=10, style_count=500),
-            transforms.Normalize(mean=(0.3798, 0.3760, 0.3695) , std=(0.0461, 0.0469, 0.0455)),
-            transforms.Resize((100,100))
+            # transforms.Normalize(mean=(0.3798, 0.3760, 0.3695) , std=(0.0461, 0.0469, 0.0455)),
+            transforms.Resize((100,100), antialias=False)
         ])
 
-        return data_transforms
+        label_transforms = transforms.Compose([
+            LabelSwap(group=group)
+        ])
+
+        return data_transforms, label_transforms
         
     def get_client_local_dataset(self, transforms=None):
         datasets = self.client_datasets[self.client_id]
@@ -250,7 +256,7 @@ class ClientBase:
                 progress_tracker.advance(task_progress, 1)
 
                 #Test local model on global data
-                loss_after, correct_after = self.evaluate(dataset=global_testset,epoch= current_global_epoch, output_tag= f"client_{self.client_id}_global_eval_after")
+                loss_after, correct_after = self.evaluate(dataset=global_testset,epoch=current_global_epoch, output_tag= f"client_{self.client_id}_global_eval_after")
                 progress_tracker.advance(task_progress, 1)
             else:
                 progress_tracker.advance(task_progress, 2)

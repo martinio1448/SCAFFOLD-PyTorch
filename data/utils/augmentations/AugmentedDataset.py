@@ -7,8 +7,12 @@ class AugSet(Dataset):
         
     def __getitem__(self, index):
         x, y = self.subset[index]
-        if self.transform:
-            x = self.transform(x)
+        if self.transform is not None:
+            data_transforms, label_transforms = self.transform
+            if data_transforms is not None:
+                x = data_transforms(x)
+            if label_transforms is not None:
+                y = label_transforms(y)
         return x, y
         
     def __len__(self):

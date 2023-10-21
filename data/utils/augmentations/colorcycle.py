@@ -8,8 +8,11 @@ class CycleColor:
         self.background_hue = ((self.epoch+10)*360/cycle)%360
         self.digit_hue = ((self.epoch+30)*360/cycle)%360
 
-        self.background_pool = torch.as_tensor([colorsys.hsv_to_rgb(math.radians(i), 0.5, 0.5) for i in torch.linspace(self.background_hue, self.background_hue+generation_range, style_count)]).to(device)
-        self.digit_pool = torch.as_tensor([colorsys.hsv_to_rgb(math.radians(i), 0.5, 0.5) for i in torch.linspace(self.digit_hue+30, self.digit_hue+generation_range+30, style_count)]).to(device)
+        bg_saturation, gv_val, digit_saturation, digit_val = torch.FloatTensor(4, style_count).uniform_(0.2, 1)
+        
+
+        self.background_pool = torch.as_tensor([colorsys.hsv_to_rgb(math.radians(i), bg_saturation[index].item(), gv_val[index].item()) for index, i in enumerate(torch.linspace(self.background_hue, self.background_hue+generation_range, style_count))]).to(device)
+        self.digit_pool = torch.as_tensor([colorsys.hsv_to_rgb(math.radians(i), digit_saturation[index].item(), digit_val[index].item()) for index, i in enumerate(torch.linspace(self.digit_hue+30, self.digit_hue+generation_range+30, style_count))]).to(device)
         self.style_count = style_count
         self.background_tolerance = background_tolerance
         # self.rgb_background = torch.tensor(colorsys.hsv_to_rgb(math.radians(self.background_hue), 0.5, 0.5)).to(device)
@@ -30,10 +33,11 @@ class CycleColor:
         bg_interleave_factors = background_mask.squeeze().sum(dim=(1,2))
         digit_interleave_factors = digit_mask.squeeze().sum(dim=(1,2))
 
-        color_indices = torch.randint(0,self.style_count, (sample.shape[0],))
+        bg_color_indices = torch.randint(0,self.style_count, (sample.shape[0],))
+        digit_color_indices = torch.randint(0,self.style_count, (sample.shape[0],))
         # print(self.background_pool[color_indices].shape, bg_interleave_factors.shape)
-        bg_colors = self.background_pool[color_indices].repeat_interleave(bg_interleave_factors, dim=0)
-        digit_colors = self.digit_pool[color_indices].repeat_interleave(digit_interleave_factors, dim=0)
+        bg_colors = self.background_pool[bg_color_indices].repeat_interleave(bg_interleave_factors, dim=0)
+        digit_colors = self.digit_pool[digit_color_indices].repeat_interleave(digit_interleave_factors, dim=0)
 
         # print(bg_colors.shape, permuted_color_pic[background_mask.squeeze()].shape)
 

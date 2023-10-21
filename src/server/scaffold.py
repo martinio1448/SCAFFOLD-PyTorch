@@ -11,6 +11,8 @@ from pathlib import Path
 from base import ServerBase
 from client.scaffold import SCAFFOLDClient
 from config.util import clone_parameters, get_args
+from typing import List
+import numpy as np
 
 
 class SCAFFOLDServer(ServerBase):
@@ -97,13 +99,14 @@ class SCAFFOLDServer(ServerBase):
                 (loss, correct) = self.trainer.evaluate(dataset=self.trainer.global_dataset["test"], epoch=E, output_tag="global_val", transforms=self.trainer.get_test_transforms(E))
 
                 res_cache = []
+                cv_cache = []
                 round_stats_cache = [None] * len(self.client_id_indices)
                 
                 client_task = pg.add_task("[Green]Training clients")
                 for client_id in pg.track(selected_clients, task_id=client_task):
                     client_local_params = clone_parameters(self.global_params_dict)
                     # self.writer.open()
-                    res, stats = self.trainer.train(
+                    res, stats, c_plus = self.trainer.train(
                         client_id=client_id,
                         progress_tracker=pg,
                         model_params=client_local_params,
@@ -114,13 +117,17 @@ class SCAFFOLDServer(ServerBase):
                         profiler=None
                     )
                     res_cache.append(res)
-
+                    cv_cache.append(c_plus)
                     self.num_correct[E].append(stats["correct"])
                     self.num_samples[E].append(stats["size"])
                     round_stats_cache[client_id] = stats
                     self.writer.close()
+
+                self.writer.add_scalars(f"global_eval", {"accuracy": correct/len(self.trainer.global_dataset["test"])}, global_step=E)
                 self.aggregate(res_cache, E)
                 stats_cache.append(round_stats_cache)
+                self.log_group_stats(selected_clients, E, cv_cache)
+                del cv_cache
 
                 if E % self.args.save_period == 0 and self.args.save_period > 0:
                     torch.save(
@@ -168,6 +175,64 @@ class SCAFFOLDServer(ServerBase):
 
         torch.save(self.c_global,  f"{self.args.output_dir}/control_variates/control_variates_global_r{E}.pt")
 
+
+    def log_group_stats(self, client_ids: List[int], global_epoch: int, variates):
+        num_clients = len(client_ids)
+        group_indices = np.ma.arange(0,num_clients).reshape((num_clients//2, 2))
+        layer_variates = [np.asarray(layer) for layer in zip(*variates)]
+
+        group_means = []
+        generic_group_difs = []
+        specific_group_difs = []
+        for group_num, indices in enumerate(group_indices):
+            layer_means = []
+            generic_layer_difs = []
+            specific_layer_difs = []
+            # print(f"Going for group {group_num}")
+            for index, layer_lst in enumerate(layer_variates):
+                layer = np.asarray(layer_lst)
+                inner_group_means = layer[group_indices].mean(axis=1)
+
+                sumrange = tuple(range(1,inner_group_means.ndim))
+                dif_to_other_groups = np.sqrt(((inner_group_means-inner_group_means[group_num])**2).sum(axis=sumrange))
+                generic_layer_difs.append(dif_to_other_groups)
+                # print(dif_to_other_groups.shape, dif_to_other_groups, inner_group_means.shape)
+                # print(layer.shape)
+                inner_mean = inner_group_means[group_num]
+                # inner_mean = layer[indices].mean(axis=0)
+                # print(layer[indices].shape)
+                inner_dif = np.sqrt(((layer[indices][0]-layer[indices][1])**2).sum())
+                group_indices[group_num] = np.ma.masked
+                # print(layer[indices].shape, layer[group_indices.flatten().compressed()].shape, group_indices.flatten().compressed())
+                outer_mean = layer[group_indices.flatten().compressed()].mean(axis=0)
+                # print(inner_group_means.shape, layer[indices].shape, inner_mean.shape)
+                inter_difs = np.sqrt(((inner_mean-outer_mean)**2).sum())
+                group_indices.mask[group_num] = False
+                # print(inner_mean.shape, outer_mean.shape)
+                # layer_means.append(np.stack((inner_mean, outer_mean)))
+                specific_layer_difs.append(np.asarray((inner_dif, inter_difs)))
+            group_means.append(layer_means)
+            generic_group_difs.append(generic_layer_difs)
+            specific_group_difs.append(specific_layer_difs)
+
+        specific_stat_mean = np.asarray(specific_group_difs).mean(axis=1)
+        generic_stat_map = np.asarray(generic_group_difs)
+        generic_stat_mean = generic_stat_map.mean(axis=1)
+
+        for group_id, group_stats in enumerate(specific_stat_mean):
+            scalar_dict = {
+                "inner_cv_dif" : group_stats[0],
+                "inter_cv_dif" : group_stats[1],
+            }
+            self.writer.add_scalars(f"group_{group_id}", scalar_dict, global_epoch)
+
+        torch.save(generic_stat_map, f"{self.args.output_dir}/cv_dif_r{global_epoch}.pt")
+        del variates, generic_group_difs, group_means, specific_stat_mean
+
+        for group_id, means in enumerate(generic_stat_mean):
+            scalar_dict = {f"group_{index}": stat for index, stat in enumerate(means)}
+
+            self.writer.add_scalars(f"group_{group_id}_generic", scalar_dict, global_epoch)
 
 if __name__ == "__main__":
     server = SCAFFOLDServer()

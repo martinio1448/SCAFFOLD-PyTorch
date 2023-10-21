@@ -10,6 +10,8 @@ class ExpandToRGB:
         # print(self.displacement.shape)
 
     def __call__(self, sample: torch.tensor):
-        ret = sample.repeat_interleave(3, dim=1)
+        norm = (sample - torch.min(sample))/torch.max(sample)
+
+        ret = norm.repeat_interleave(3, dim=1)
         # deformed = elasticdeform.deform_grid(image.numpy(), self.displacement.numpy())
         return ret
